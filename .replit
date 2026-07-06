@@ -1,4 +1,4 @@
-modules = ["php-8.2", "nodejs-20", "web", "php-8.4"]
+modules = ["php-8.2", "nodejs-20", "web", "php-8.4", "postgresql-16"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
@@ -16,6 +16,7 @@ DB_DATABASE = "heliumdb"
 DB_USERNAME = "postgres"
 DB_PASSWORD = "password"
 APP_URL = "https://f5d4e2fc-77b4-4387-9fe5-9e789b14b212-00-u0yy64gbvbde.sisko.replit.dev"
+APP_LOCALE = "id"
 
 [workflows]
 runButton = "Project"
