@@ -538,7 +538,11 @@ class ProductRepository extends Repository
 
             $table = DB::getTablePrefix().$query->getModel()->getTable();
 
-            $qb->orderBy(DB::raw('FIELD('.$table.'.id, '.implode(',', $indices['ids']).')'));
+            $orderByRaw = DB::connection()->getDriverName() === 'pgsql'
+                ? 'array_position(ARRAY['.implode(',', $indices['ids']).']::bigint[], '.$table.'.id)'
+                : 'FIELD('.$table.'.id, '.implode(',', $indices['ids']).')';
+
+            $qb->orderBy(DB::raw($orderByRaw));
 
             return $qb;
         });

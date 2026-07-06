@@ -340,8 +340,12 @@ class ProductDataGrid extends DataGrid
             ->whereIn('product_flat.product_id', $ids);
 
         if ($ids) {
+            $orderByRaw = DB::connection()->getDriverName() === 'pgsql'
+                ? 'array_position(ARRAY['.implode(',', $ids).']::bigint[], '.DB::getTablePrefix().'product_flat.product_id)'
+                : 'FIELD('.DB::getTablePrefix().'product_flat.product_id, '.implode(',', $ids).')';
+
             $this->queryBuilder
-                ->orderBy(DB::raw('FIELD('.DB::getTablePrefix().'product_flat.product_id, '.implode(',', $ids).')'));
+                ->orderBy(DB::raw($orderByRaw));
         }
 
         $total = $results['hits']['total']['value'];
