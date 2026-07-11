@@ -20,6 +20,7 @@ class KledoSyncLog extends Model
      */
     protected $fillable = [
         'order_id',
+        'step',
         'status',
         'response_body',
     ];

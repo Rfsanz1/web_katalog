@@ -1,0 +1,120 @@
+Saya punya project e-commerce berbasis Bagisto (Laravel) di repo ini: https://github.com/Rfsanz1/web_katalog.git
+
+Saya ingin membuat integrasi otomatis: setiap ada order baru yang berhasil dibuat di Bagisto, sistem otomatis membuat invoice di Kledo (software akuntansi) lewat REST API-nya. Alur dan mapping field sudah saya tentukan persis di bawah ini — ikuti persis, jangan menebak nama field sendiri.
+
+=== KONFIGURASI ===
+Autentikasi ke Kledo pakai access token statis (bukan OAuth2 flow). Simpan di .env:
+KLEDO_ACCESS_TOKEN=
+KLEDO_API_BASE_URL=https://gentongmas.api.kledo.com/api/v1
+
+Buat service KledoApiClient (pakai Laravel Http facade) yang menyisipkan header
+Authorization: Bearer {KLEDO_ACCESS_TOKEN} di setiap request.
+
+=== STRUKTUR PACKAGE ===
+Buat package baru di packages/Webkul/KledoIntegration mengikuti pola package Bagisto
+yang sudah ada (contoh: packages/Webkul/Payment untuk pola listener & service provider).
+
+Buat migration untuk 3 tabel mapping baru:
+1. Tambah kolom `kledo_contact_id` (nullable) di tabel `customers`
+2. Tambah kolom `kledo_finance_account_id` (nullable) di tabel `products`
+3. Buat tabel baru `kledo_payment_mappings` (kolom: payment_method_code, finance_account_id)
+4. Tambah kolom `kledo_invoice_id` dan `kledo_sync_status` (enum: pending, success, failed) di tabel `orders`
+5. Buat tabel `kledo_sync_logs` (kolom: order_id, step, status, response_body, created_at)
+
+=== TRIGGER ===
+Daftarkan listener ke event `checkout.order.save.after` (event ini sudah ada dan
+dipanggil dari Webkul\Sales\Repositories\OrderRepository setiap order berhasil disimpan).
+Jalankan proses lewat Laravel Queue Job (ShouldQueue), jangan synchronous saat checkout.
+
+=== ALUR PROSES (ikuti urutan ini persis) ===
+
+LANGKAH 1 - KONTAK/KONSUMEN
+Cek dulu apakah customer sudah punya kledo_contact_id tersimpan di tabel customers.
+- Kalau sudah ada -> langsung pakai contact_id itu, skip ke Langkah 2.
+- Kalau belum ada -> lakukan pencarian otomatis:
+  GET /finance/contacts?search=<nama customer>
+  Cocokkan hasil pencarian berdasarkan nama (persis, case-insensitive) ATAU nomor HP
+  (setelah dibersihkan dari karakter non-angka).
+  - Kalau ketemu -> pakai contact_id itu, simpan ke customers.kledo_contact_id.
+    Kalau alamat di hasil pencarian beda dengan alamat order sekarang, update dulu:
+    PUT /finance/contacts/:id
+  - Kalau tidak ketemu -> buat baru:
+    POST /finance/contacts
+    Body:
+      name: gabungan customer_first_name + customer_last_name dari order
+      phone: telephone dari order_addresses (shipping)
+      address: alamat lengkap dari order_addresses (shipping)
+      type_id: 4
+      is_customer: 1
+    Simpan contact_id hasil response ke customers.kledo_contact_id.
+
+LANGKAH 2 - INVOICE
+POST /finance/invoices
+Body:
+  trans_date: tanggal order dibuat (created_at), format sesuai requirement API (otomatis hari ini kalau tidak diisi)
+  due_date: trans_date + 30 hari (buat konfigurasi dueDays di config, default 30)
+  memo: gabungan "nama channel/catatan order" + alamat pengiriman lengkap
+        (field ini tampil sebagai "Referensi" di Kledo)
+  contact_id: hasil dari Langkah 1 (hanya dikirim kalau valid/tidak null)
+  include_tax: 0
+  (jangan kirim nomor invoice lokal Bagisto, biarkan Kledo generate nomor sendiri)
+Simpan id hasil response ke orders.kledo_invoice_id, set kledo_sync_status = success.
+
+LANGKAH 3 - ITEM PRODUK
+Untuk setiap baris di order_items, masukkan ke array items[] pada body invoice yang sama
+(atau request terpisah sesuai spek API, cek dokumentasi):
+  Untuk tiap item, cek dulu products.kledo_finance_account_id:
+  - Kalau ada -> pakai itu sebagai finance_account_id.
+  - Kalau kosong -> cari dulu produk berdasarkan nama produk di Kledo (via endpoint yang sesuai),
+    kalau ketemu simpan finance_account_id ke products.kledo_finance_account_id untuk dipakai lagi nanti.
+    Kalau tetap tidak ketemu -> item ini DILEWATI (tidak dikirim), catat ke kledo_sync_logs
+    sebagai warning supaya bisa dicek manual.
+  qty: qty_ordered dari order_items
+  price: price dari order_items
+  amount: qty_ordered x price
+  desc: name produk dari order_items
+  discount_percent: 0
+  (jangan kirim field unit, biarkan pakai satuan default produk di Kledo)
+
+LANGKAH 4 - AUTO-LUNAS (skip kalau metode pembayaran adalah COD)
+Setelah invoice di Langkah 2 berhasil dibuat:
+  Cari metode pembayaran dari order (payment method code di Bagisto).
+  Cek tabel kledo_payment_mappings berdasarkan payment_method_code itu untuk dapat finance_account_id.
+  - Kalau ketemu di mapping -> pakai finance_account_id itu.
+  - Kalau tidak ada di mapping -> coba tebak otomatis dari nama akun COA yang mirip nama metode
+    pembayaran (best effort, catat ke log kalau gagal).
+  POST endpoint pembayaran/pelunasan invoice di Kledo (cek nama endpoint pasti di dokumentasi
+  https://gentongmas.api.kledo.com/documentation), kirim invoice_id dari Langkah 2 dan
+  finance_account_id yang sudah didapat.
+
+=== ERROR HANDLING ===
+- Setiap langkah (1-4) dibungkus try-catch terpisah, dicatat ke kledo_sync_logs
+  (order_id, step, status, response_body, created_at).
+- Kalau Langkah 1 atau 2 gagal, set orders.kledo_sync_status = failed, seluruh proses berhenti
+  (jangan lanjut ke langkah berikutnya dengan data tidak lengkap).
+- Kalau Langkah 3 (item) sebagian gagal (misal 1 dari 5 produk tidak ketemu mapping-nya),
+  tetap lanjutkan proses untuk item lain, tapi catat warning di log.
+- Kalau Langkah 4 gagal, invoice tetap dianggap berhasil dibuat (sync_status tetap success),
+  tapi catat warning bahwa pelunasan otomatis gagal, supaya bisa dilunaskan manual nanti.
+- Gunakan retry otomatis Laravel Queue (3x percobaan, backoff 1 menit / 5 menit / 15 menit)
+  khusus untuk error koneksi/timeout (bukan error validasi data).
+
+=== ADMIN UI ===
+Tambahkan halaman di admin panel Bagisto:
+- List order dengan kledo_sync_status, filter by status (pending/success/failed)
+- Detail log per order (isi kledo_sync_logs)
+- Tombol "Retry Sync" untuk order yang failed
+- Halaman kecil untuk isi kledo_payment_mappings (dropdown payment method Bagisto ->
+  input finance_account_id Kledo)
+
+=== TESTING ===
+Buat command Artisan `php artisan kledo:test-connection` yang test koneksi ke Kledo API
+pakai token yang ada di .env (hit endpoint GET yang ringan, misal list contacts).
+
+=== CATATAN PENTING ===
+- Jangan hardcode token, ambil dari .env
+- Field mapping harus sesuai dokumentasi resmi di https://gentongmas.api.kledo.com/documentation
+  — kalau ada field yang saya sebutkan di atas ternyata beda namanya di dokumentasi resmi,
+  ikuti dokumentasi resmi, bukan asumsi saya
+- Ikuti coding style Laravel/Bagisto yang sudah ada di project ini (PSR-12, Repository pattern)
+- Setelah selesai, kasih saya ringkasan file apa saja yang dibuat/diubah

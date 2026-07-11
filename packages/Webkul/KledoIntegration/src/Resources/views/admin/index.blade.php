@@ -8,8 +8,14 @@
             @lang('kledo::app.admin.sync.title')
         </p>
 
-        {{-- Test Connection button --}}
         <div class="flex items-center gap-x-2.5">
+            <a
+                href="{{ route('admin.kledo.payment-mappings.index') }}"
+                class="secondary-button"
+            >
+                @lang('kledo::app.admin.menu.payment-mappings')
+            </a>
+
             <button
                 id="btn-test-connection"
                 type="button"
@@ -27,22 +33,12 @@
     {{-- Connection test result banner --}}
     <div id="connection-result" class="mb-4 hidden rounded p-3 text-sm"></div>
 
-    {{-- Stats row --}}
-    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div class="rounded-lg border bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-                @lang('kledo::app.admin.sync.stats.synced')
-            </p>
-            <p class="text-2xl font-bold text-green-600">{{ $syncedCount }}</p>
+    {{-- Token missing warning --}}
+    @if (! $isConfigured)
+        <div class="mb-4 rounded bg-yellow-100 p-3 text-sm text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+            ⚠️ @lang('kledo::app.admin.sync.token-missing')
         </div>
-
-        <div class="rounded-lg border bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-                @lang('kledo::app.admin.sync.stats.failed')
-            </p>
-            <p class="text-2xl font-bold text-red-600">{{ $failedCount }}</p>
-        </div>
-    </div>
+    @endif
 
     {{-- Flash messages --}}
     @if (session('success'))
@@ -57,28 +53,65 @@
         </div>
     @endif
 
-    @if (! $isConfigured)
-        <div class="mb-4 rounded bg-yellow-100 p-3 text-sm text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-            ⚠️ @lang('kledo::app.admin.sync.token-missing')
-        </div>
-    @endif
+    {{-- Stats row --}}
+    <div class="mb-6 grid grid-cols-3 gap-4">
+        @foreach ([
+            ['key' => 'pending', 'label' => 'kledo::app.admin.sync.stats.pending', 'color' => 'text-yellow-600'],
+            ['key' => 'success', 'label' => 'kledo::app.admin.sync.stats.success', 'color' => 'text-green-600'],
+            ['key' => 'failed',  'label' => 'kledo::app.admin.sync.stats.failed',  'color' => 'text-red-600'],
+        ] as $stat)
+            <a
+                href="{{ route('admin.kledo.sync.index', ['status' => $stat['key']]) }}"
+                class="block rounded-lg border bg-white p-4 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800 {{ $currentStatus === $stat['key'] ? 'ring-2 ring-blue-500' : '' }}"
+            >
+                <p class="text-xs text-gray-500 dark:text-gray-400">@lang($stat['label'])</p>
+                <p class="text-2xl font-bold {{ $stat['color'] }}">{{ $stats[$stat['key']] }}</p>
+            </a>
+        @endforeach
+    </div>
 
-    {{-- Sync log table --}}
+    {{-- Status filter tabs --}}
+    <div class="mb-4 flex gap-2">
+        <a
+            href="{{ route('admin.kledo.sync.index') }}"
+            class="rounded px-3 py-1 text-sm {{ ! $currentStatus ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300' }}"
+        >
+            @lang('kledo::app.admin.sync.filter.all')
+        </a>
+
+        @foreach ([
+            'pending' => 'kledo::app.admin.sync.filter.pending',
+            'success' => 'kledo::app.admin.sync.filter.success',
+            'failed'  => 'kledo::app.admin.sync.filter.failed',
+        ] as $value => $label)
+            <a
+                href="{{ route('admin.kledo.sync.index', ['status' => $value]) }}"
+                class="rounded px-3 py-1 text-sm {{ $currentStatus === $value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300' }}"
+            >
+                @lang($label)
+            </a>
+        @endforeach
+    </div>
+
+    {{-- Orders table --}}
     <div class="overflow-hidden rounded-xl border dark:border-gray-700">
         <table class="w-full text-sm">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
                     <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
-                        @lang('kledo::app.admin.sync.table.order-id')
-                    </th>
-                    <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
                         @lang('kledo::app.admin.sync.table.increment-id')
                     </th>
                     <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
-                        @lang('kledo::app.admin.sync.table.status')
+                        @lang('kledo::app.admin.sync.table.customer')
                     </th>
                     <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
-                        @lang('kledo::app.admin.sync.table.response')
+                        @lang('kledo::app.admin.sync.table.total')
+                    </th>
+                    <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
+                        @lang('kledo::app.admin.sync.table.kledo-id')
+                    </th>
+                    <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
+                        @lang('kledo::app.admin.sync.table.status')
                     </th>
                     <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
                         @lang('kledo::app.admin.sync.table.created-at')
@@ -89,63 +122,71 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-900">
-                @forelse ($logs as $log)
+                @forelse ($orders as $order)
                     <tr>
-                        <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
-                            #{{ $log->order_id }}
-                        </td>
-                        <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
-                            @if ($log->order)
-                                <a
-                                    href="{{ route('admin.sales.orders.view', $log->order_id) }}"
-                                    class="text-blue-600 hover:underline dark:text-blue-400"
-                                >
-                                    {{ $log->order->increment_id }}
-                                </a>
-                            @else
-                                —
-                            @endif
-                        </td>
                         <td class="px-4 py-3">
-                            @if ($log->status === 'synced')
-                                <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-300">
-                                    synced
-                                </span>
+                            <a
+                                href="{{ route('admin.sales.orders.view', $order->id) }}"
+                                class="text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                                {{ $order->increment_id }}
+                            </a>
+                        </td>
+
+                        <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
+                            {{ $order->customer_first_name }} {{ $order->customer_last_name }}
+                            <div class="text-xs text-gray-400">{{ $order->customer_email }}</div>
+                        </td>
+
+                        <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
+                            {{ $order->base_currency_code }} {{ number_format($order->grand_total, 2) }}
+                        </td>
+
+                        <td class="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
+                            {{ $order->kledo_invoice_id ?? '—' }}
+                        </td>
+
+                        <td class="px-4 py-3">
+                            @php $s = $order->kledo_sync_status; @endphp
+                            @if ($s === 'success')
+                                <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-300">success</span>
+                            @elseif ($s === 'failed')
+                                <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">failed</span>
+                            @elseif ($s === 'pending')
+                                <span class="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">pending</span>
                             @else
-                                <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">
-                                    failed
-                                </span>
+                                <span class="text-gray-400">—</span>
                             @endif
                         </td>
-                        <td class="max-w-xs truncate px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
-                            {{ $log->response_body ? \Illuminate\Support\Str::limit($log->response_body, 120) : '—' }}
-                        </td>
+
                         <td class="px-4 py-3 text-gray-500 dark:text-gray-400">
-                            {{ $log->created_at->format('d M Y H:i') }}
+                            {{ $order->created_at->format('d M Y H:i') }}
                         </td>
+
                         <td class="px-4 py-3">
-                            @if ($log->status === 'failed')
-                                <form method="POST" action="{{ route('admin.kledo.sync.retry', $log->order_id) }}">
-                                    @csrf
-                                    <button
-                                        type="submit"
-                                        class="secondary-button text-xs"
-                                    >
-                                        @lang('kledo::app.admin.sync.table.retry')
-                                    </button>
-                                </form>
-                            @else
-                                —
-                            @endif
+                            <div class="flex items-center gap-2">
+                                <a
+                                    href="{{ route('admin.kledo.sync.show', $order->id) }}"
+                                    class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                                >
+                                    @lang('kledo::app.admin.sync.table.view-logs')
+                                </a>
+
+                                @if ($order->kledo_sync_status === 'failed')
+                                    <form method="POST" action="{{ route('admin.kledo.sync.retry', $order->id) }}">
+                                        @csrf
+                                        <button type="submit" class="secondary-button text-xs">
+                                            @lang('kledo::app.admin.sync.table.retry')
+                                        </button>
+                                    </form>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td
-                            colspan="6"
-                            class="px-4 py-8 text-center text-gray-400 dark:text-gray-500"
-                        >
-                            @lang('kledo::app.admin.sync.no-logs')
+                        <td colspan="7" class="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                            @lang('kledo::app.admin.sync.no-orders')
                         </td>
                     </tr>
                 @endforelse
@@ -154,9 +195,9 @@
     </div>
 
     {{-- Pagination --}}
-    @if ($logs->hasPages())
+    @if ($orders->hasPages())
         <div class="mt-4">
-            {{ $logs->links() }}
+            {{ $orders->links() }}
         </div>
     @endif
 

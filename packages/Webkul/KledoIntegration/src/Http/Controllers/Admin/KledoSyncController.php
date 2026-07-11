@@ -17,19 +17,54 @@ class KledoSyncController extends Controller
     ) {}
 
     /**
-     * Show the Kledo sync status page — lists failed / recent sync logs.
+     * Show the Kledo sync status page.
+     * Lists orders that have been processed (kledo_sync_status is not null),
+     * with optional filter by status.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $logs = KledoSyncLog::with('order')
+        $status = $request->query('status');
+
+        $query = \Webkul\Sales\Models\Order::query()
+            ->whereNotNull('kledo_sync_status')
+            ->orderByDesc('created_at');
+
+        if ($status && in_array($status, ['pending', 'success', 'failed'])) {
+            $query->where('kledo_sync_status', $status);
+        }
+
+        $orders = $query->paginate(25)->withQueryString();
+
+        $stats = [
+            'pending' => \Webkul\Sales\Models\Order::where('kledo_sync_status', 'pending')->count(),
+            'success' => \Webkul\Sales\Models\Order::where('kledo_sync_status', 'success')->count(),
+            'failed'  => \Webkul\Sales\Models\Order::where('kledo_sync_status', 'failed')->count(),
+        ];
+
+        $isConfigured   = $this->client->isConfigured();
+        $currentStatus  = $status;
+
+        return view('kledo::admin.index', compact('orders', 'stats', 'isConfigured', 'currentStatus'));
+    }
+
+    /**
+     * Show the sync log detail for a specific order.
+     */
+    public function show(int $orderId)
+    {
+        $order = $this->orderRepository->find($orderId);
+
+        if (! $order) {
+            session()->flash('error', __('kledo::app.admin.sync.order-not-found'));
+
+            return redirect()->route('admin.kledo.sync.index');
+        }
+
+        $logs = KledoSyncLog::where('order_id', $orderId)
             ->orderByDesc('created_at')
-            ->paginate(25);
+            ->get();
 
-        $failedCount  = KledoSyncLog::where('status', 'failed')->count();
-        $syncedCount  = KledoSyncLog::where('status', 'synced')->count();
-        $isConfigured = $this->client->isConfigured();
-
-        return view('kledo::admin.index', compact('logs', 'failedCount', 'syncedCount', 'isConfigured'));
+        return view('kledo::admin.logs.show', compact('order', 'logs'));
     }
 
     /**
@@ -45,7 +80,7 @@ class KledoSyncController extends Controller
             return redirect()->route('admin.kledo.sync.index');
         }
 
-        // Reset status so it doesn't show as permanently failed.
+        // Reset status so it does not show as permanently failed.
         $order->update(['kledo_sync_status' => 'pending']);
 
         SyncOrderToKledo::dispatch($orderId);
