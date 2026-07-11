@@ -6,13 +6,14 @@ An open-source e-commerce platform built on **Laravel 12** (PHP 8.3+) with a **V
 
 Bagisto supports multi-vendor marketplaces, B2B platforms, and headless commerce. The codebase is highly modular — business logic lives in `packages/Webkul/`, with separate packages for the Shop storefront, Admin panel, Cart, Checkout, Product, etc.
 
+A custom `packages/Webkul/KledoIntegration` package auto-syncs every new order to Kledo (Indonesian accounting SaaS) as an invoice via REST API.
+
 ## Stack
 
 - **Backend:** PHP 8.3+, Laravel 12
 - **Frontend:** Vue.js, Tailwind CSS, Vite 6
-- **Database:** MySQL (required)
-- **Cache/Sessions:** Redis (optional but recommended)
-- **Search:** Elasticsearch (optional)
+- **Database:** MariaDB 10.11 (local, started via `start.sh`)
+- **Cache/Sessions:** File-based (default)
 - **Payments:** Stripe, PayPal, Razorpay integrations included
 
 ## Key entry points
@@ -22,42 +23,60 @@ Bagisto supports multi-vendor marketplaces, B2B platforms, and headless commerce
 - `routes/web.php` — base routes
 - `packages/Webkul/Shop/src/Routes/` — storefront routes
 - `packages/Webkul/Admin/src/Routes/` — admin panel routes
+- `packages/Webkul/KledoIntegration/` — Kledo invoice sync package
 
-## Running locally / on Replit
+## Running on Replit
 
-### Prerequisites
+The app starts automatically via `bash start.sh`. The script handles everything on first run and is idempotent on subsequent runs:
 
-1. **Database** — Replit provides a **PostgreSQL** database by default (see `.replit` env vars). Bagisto officially supports MySQL, but the Replit environment is pre-configured with PostgreSQL (`DB_CONNECTION=pgsql`). To use MySQL instead, provision an external MySQL service and update the `DB_*` env vars.
-2. **PHP extensions:** `intl`, `mbstring`, `pdo_pgsql` (or `pdo_mysql` for MySQL), `openssl`, `curl`
+1. Starts MariaDB (local, data in `.mysql/data/`)
+2. Creates `bagisto` database and user if missing
+3. Copies `.env.example` → `.env` and sets DB credentials
+4. Generates `APP_KEY` if blank
+5. Runs `composer install` if `vendor/` is missing
+6. Runs `php artisan migrate --force`
+7. Seeds the database (once, checks `channels` table count)
+8. Builds frontend assets via `npm run build` (once)
+9. Starts PHP dev server on port 5000
 
-### Setup steps
+### Database credentials (local MariaDB)
 
-```bash
-cp .env.example .env
-# Edit .env: set DB_DATABASE, DB_USERNAME, DB_PASSWORD, APP_URL
+| Variable | Value |
+|---|---|
+| `DB_CONNECTION` | `mysql` |
+| `DB_HOST` | `127.0.0.1` |
+| `DB_PORT` | `3306` |
+| `DB_DATABASE` | `bagisto` |
+| `DB_USERNAME` | `bagisto` |
+| `DB_PASSWORD` | `bagisto_pass` |
 
-composer install
+### Admin panel
 
-php artisan key:generate
-php artisan migrate --seed
+Visit `/admin` — default seeded credentials: **admin@example.com / admin123**
 
-npm install && npm run build
+### Kledo Integration
+
+Set these in `.env` to enable auto-invoice sync:
+
+```
+KLEDO_ACCESS_TOKEN=your_static_bearer_token
+KLEDO_API_BASE_URL=https://gentongmas.api.kledo.com/api/v1
+KLEDO_DUE_DAYS=30
 ```
 
-### Run
+Test connectivity: `php artisan kledo:test-connection`
 
-```bash
-cd public && php -S 0.0.0.0:5000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
-```
+Admin UI: `/admin/kledo` — shows sync status, per-order logs, retry button, and payment method mappings.
 
 ### Notable .env variables
 
 | Variable | Purpose |
 |---|---|
-| `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | MySQL connection |
 | `APP_URL` | Full public URL of the app |
 | `APP_ADMIN_URL` | Admin panel path (default: `admin`) |
-| `MAIL_MAILER` | Mailer driver (Bagisto uses a custom dynamic SMTP driver) |
+| `KLEDO_ACCESS_TOKEN` | Kledo static bearer token |
+| `KLEDO_API_BASE_URL` | Kledo API base URL |
+| `QUEUE_CONNECTION` | Set to `database` or `redis` for async queue processing |
 
 ## User preferences
 

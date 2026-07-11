@@ -42,3 +42,6 @@ skills-lock.json
 /vendor
 yarn.lock
 yarn-error.log
+
+# MariaDB local data
+.mysql/data/

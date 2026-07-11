@@ -39,8 +39,13 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd public && php -S 0.0.0.0:5000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php"
+args = "bash start.sh"
 waitForPort = 5000
+
+[[ports]]
+localPort = 3306
+externalPort = 3000
+exposeLocalhost = true
 
 [[ports]]
 localPort = 5000
