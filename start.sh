@@ -89,8 +89,25 @@ echo "[start] Running migrations..."
 php artisan migrate --force 2>&1 | tail -5
 
 # ─── 6. Run seeders only if tables are empty ────────────────────────────────
-CHANNEL_COUNT=$(mysql -u bagisto -pbagisto_pass --socket=/tmp/mysql.sock bagisto \
-    -se "SELECT COUNT(*) FROM channels" 2>/dev/null || echo "0")
+# NOTE: Replit injects real DB_CONNECTION/DB_HOST/etc. environment variables
+# (pointing at the managed Postgres database) which take precedence over the
+# mysql credentials written into .env above. So the app's actual database is
+# NOT the local MariaDB — this check must ask Laravel/the real DB connection,
+# not query MariaDB directly, or it will always see 0 rows and re-seed
+# (wiping any admin/manual customizations) on every restart.
+CHANNEL_COUNT=$(php -r '
+require __DIR__."/vendor/autoload.php";
+$app = require __DIR__."/bootstrap/app.php";
+$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->bootstrap();
+try {
+    echo \Illuminate\Support\Facades\Schema::hasTable("channels")
+        ? \Illuminate\Support\Facades\DB::table("channels")->count()
+        : 0;
+} catch (\Throwable $e) {
+    echo 0;
+}
+' 2>/dev/null || echo "0")
 
 if [ "$CHANNEL_COUNT" -eq 0 ] 2>/dev/null; then
     echo "[start] Seeding database..."

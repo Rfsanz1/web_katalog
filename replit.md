@@ -10,9 +10,9 @@ A custom `packages/Webkul/KledoIntegration` package auto-syncs every new order t
 
 ## Stack
 
-- **Backend:** PHP 8.3+, Laravel 12
+- **Backend:** PHP 8.4 (installed via Replit module; project requires ^8.3), Laravel 12
 - **Frontend:** Vue.js, Tailwind CSS, Vite 6
-- **Database:** MariaDB 10.11 (local, started via `start.sh`)
+- **Database:** Replit-managed PostgreSQL (`heliumdb`, connected via `DATABASE_URL`/`DB_*` Replit env vars). **Important:** Replit injects real `DB_CONNECTION=pgsql`/`DB_HOST=helium`/etc. environment variables, which take precedence over `.env`'s `DB_CONNECTION=mysql` settings (PHP dotenv does not override real env vars). So even though `start.sh` also spins up a local MariaDB and writes mysql credentials into `.env`, the running app actually reads/writes the Postgres `heliumdb` database — the local MariaDB is unused dead weight. Use `psql -h helium -U postgres -d heliumdb` (password from `PGPASSWORD`/`DB_PASSWORD` env var) to inspect real data.
 - **Cache/Sessions:** File-based (default)
 - **Payments:** Stripe, PayPal, Razorpay integrations included
 
@@ -53,6 +53,10 @@ The app starts automatically via `bash start.sh`. The script handles everything 
 ### Admin panel
 
 Visit `/admin` — default seeded credentials: **admin@example.com / admin123**
+
+### Homepage banner slider
+
+The homepage image carousel ("Karousel Gambar") is managed via `theme_customizations` / `theme_customization_translations` (id=1, locale `id`) in the Postgres database — the same system as Admin > Settings > Theme Customization. Images live in `storage/app/public/theme/1/`. Current slides show the "GentongMas Elektronik" brand banners (2076x758px, ~2.74:1 ratio matching the theme's expected aspect ratio).
 
 ### Kledo Integration
 
