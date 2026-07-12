@@ -1,61 +1,25 @@
 #!/usr/bin/env bash
 set -e
 
-DATADIR="$(pwd)/.mysql/data"
+# ─── 1. Skip local MariaDB — app uses Replit-managed PostgreSQL (heliumdb) ──
+# Real DB credentials are injected by Replit via environment variables:
+#   DB_CONNECTION=pgsql, DB_HOST=helium, DB_PORT=5432,
+#   DB_DATABASE=heliumdb, DB_USERNAME=postgres, DB_PASSWORD=...
+echo "[start] Using Replit-managed PostgreSQL (helium/heliumdb)"
 
-# ─── 1. Start MariaDB if not already running ────────────────────────────────
-if ! mysqladmin -u root --socket=/tmp/mysql.sock status 2>/dev/null; then
-    echo "[start] Starting MariaDB..."
-    rm -f /tmp/mysql.sock /tmp/mysql.pid
-
-    mysqld \
-        --datadir="$DATADIR" \
-        --socket=/tmp/mysql.sock \
-        --pid-file=/tmp/mysql.pid \
-        --port=3306 \
-        --user=runner \
-        --bind-address=127.0.0.1 \
-        --innodb-use-native-aio=0 \
-        --log-error="$DATADIR/mysql.err" &
-
-    # Wait up to 30 s for MariaDB to accept connections
-    for i in $(seq 1 30); do
-        sleep 1
-        if mysqladmin -u root --socket=/tmp/mysql.sock status 2>/dev/null; then
-            echo "[start] MariaDB ready (${i}s)"
-            break
-        fi
-        if [ "$i" -eq 30 ]; then
-            echo "[start] ERROR: MariaDB did not start in time"
-            cat "$DATADIR/mysql.err" | tail -20
-            exit 1
-        fi
-    done
-else
-    echo "[start] MariaDB already running"
-fi
-
-# ─── 2. Create database / user if missing ───────────────────────────────────
-mysql -u root --socket=/tmp/mysql.sock 2>/dev/null <<'SQL'
-CREATE DATABASE IF NOT EXISTS bagisto CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'bagisto'@'localhost' IDENTIFIED BY 'bagisto_pass';
-GRANT ALL PRIVILEGES ON bagisto.* TO 'bagisto'@'localhost';
-FLUSH PRIVILEGES;
-SQL
-echo "[start] Database ready"
-
-# ─── 3. Bootstrap .env ──────────────────────────────────────────────────────
+# ─── 2. Bootstrap .env ──────────────────────────────────────────────────────
 if [ ! -f .env ]; then
     echo "[start] Creating .env from .env.example..."
     cp .env.example .env
 
-    # Set DB credentials
-    sed -i 's|^DB_CONNECTION=.*|DB_CONNECTION=mysql|' .env
-    sed -i 's|^DB_HOST=.*|DB_HOST=127.0.0.1|' .env
-    sed -i 's|^DB_PORT=.*|DB_PORT=3306|' .env
-    sed -i 's|^DB_DATABASE=.*|DB_DATABASE=bagisto|' .env
-    sed -i 's|^DB_USERNAME=.*|DB_USERNAME=bagisto|' .env
-    sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=bagisto_pass|' .env
+    # Use Replit Postgres (env vars injected by Replit take precedence over .env,
+    # but write them here too so artisan commands pick them up correctly)
+    sed -i 's|^DB_CONNECTION=.*|DB_CONNECTION=pgsql|' .env
+    sed -i "s|^DB_HOST=.*|DB_HOST=${DB_HOST:-helium}|" .env
+    sed -i "s|^DB_PORT=.*|DB_PORT=${DB_PORT:-5432}|" .env
+    sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${DB_DATABASE:-heliumdb}|" .env
+    sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USERNAME:-postgres}|" .env
+    sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASSWORD:-password}|" .env
 
     # Use file-based sessions (safer before first migration)
     sed -i 's|^SESSION_DRIVER=.*|SESSION_DRIVER=file|' .env
